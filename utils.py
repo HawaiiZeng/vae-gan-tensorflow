@@ -17,6 +17,11 @@ def mkdir_p(path):
 def get_image(image_path, image_size, is_crop=True, resize_w=64, is_grayscale=False):
     return transform(imread(image_path, is_grayscale), image_size, is_crop, resize_w)
 
+def get_image_xyz(image_path):
+    img = np.loadtxt(image_path).astype(np.double)
+    assert(img.shape[0] == 32*32)
+    img = img.reshape((32, 32, 3))
+    return img
 
 def transform(image, npx=64, is_crop=False, resize_w=64):
     # npx : # of pixels width/height of image
@@ -54,7 +59,7 @@ def imsave(images, size, path):
 
 def merge(images, size):
     h, w = images.shape[1], images.shape[2]
-    img = np.zeros((h * size[0], w * size[1], 3))
+    img = np.zeros((int(h * size[0]), int(w * size[1]), 3))
     for idx, image in enumerate(images):
         i = idx % size[1]
         j = idx // size[1]
@@ -133,5 +138,37 @@ def read_image_list_file(category, is_test):
 
     return list_image, list_label
 
+""" Functions below are added by Huayi """
 
+class Syn(object):
+    def __init__(self, images_path):
+
+        self.dataname = "Syn"
+        self.shape = [64, 64, 3]
+        self.shape_xyz = [32, 32, 3]
+        self.image_size = 64
+        self.image_xyz_size = 32
+        self.channel = 3
+        self.channel_xyz = 3
+        self.images_path = images_path
+        self.train_data_list, self.train_lab_list = self.load_Syn()
+
+    def load_Syn(self):
+        # get the list of image path
+        return read_image_list_file_syn(self.images_path)
+
+def read_image_list_file_syn(category):
+    list_data = []
+    list_label = []
+    path = category + "pts_geo/"
+    path_img = category + "img/"
+    lines = open(category + "namelist_syn.txt")
+    li_num = 0
+    for line in lines:
+        file_name = path_img + line.split()[0] + " " + path + line.split()[1]
+        list_data.append(file_name)
+        li_num += 1
+    lines.close()
+
+    return list_data, list_label
 

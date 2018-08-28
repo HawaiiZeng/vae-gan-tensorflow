@@ -1,4 +1,16 @@
-# VAE/GAN
+# NEW ADD
+We simply change CelebA dataset in main.py to Syn dataset, which contains supertoroids rendered images + geometric images.
+
+## Data and Run
+Data could be donwloaded:
+
+Unzip the data and put the vae_gan_syn_data folder into the root folder.
+
+[Box] https://wustl.box.com/s/nzev3y1c8g5l13tp9ft9qmt03opqpe81
+
+Running: python3 main.py
+
+# VAE/GAN (The following is the original README file:)
 the tensorflow code of [Autoencoding beyond pixels using a learned similarity metric](https://arxiv.org/abs/1512.09300v2)
 
 The paper should be the first one to combine the Variational Autoencoder(VAE) and Generative Adversarial Networks(GAN), by 

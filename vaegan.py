@@ -1,7 +1,6 @@
 import tensorflow as tf
 from ops import batch_normal, de_conv, conv2d, fully_connect, lrelu
-from utils import save_images, get_image
-from utils import CelebA
+from utils import save_images, get_image, get_image_xyz
 import numpy as np
 import cv2 
 from tensorflow.python.framework.ops import convert_to_tensor
@@ -28,23 +27,50 @@ class vaegan(object):
         self.log_vars = []
 
         self.channel = 3
+        self.channel_xyz = 3
         self.output_size = data_ob.image_size
+        self.output_xyz_size = data_ob.image_xyz_size
         self.images = tf.placeholder(tf.float32, [self.batch_size, self.output_size, self.output_size, self.channel])
+        self.images_xyz = tf.placeholder(tf.float32, [self.batch_size, self.output_xyz_size, self.output_xyz_size, self.channel_xyz])
+        # TODO(Huayi): maybe incorrect! 
+        # self.images_pairs = [self.images, self.images_xyz]
+        # print("self.images_pairs: ", self.images_pairs)
+
         self.ep = tf.random_normal(shape=[self.batch_size, self.latent_dim])
         self.zp = tf.random_normal(shape=[self.batch_size, self.latent_dim])
 
+        # self.dataset = tf.data.Dataset.from_tensor_slices(
+        #     convert_to_tensor(self.data_ob.train_data_list, dtype=tf.string))
+        # self.dataset = self.dataset.map(lambda filename : tuple(tf.py_func(self._read_by_function,
+        #                                                                     [filename], [tf.double])), num_parallel_calls=16)
+        # self.dataset = self.dataset.repeat(self.repeat_num)
+        # self.dataset = self.dataset.apply(tf.contrib.data.batch_and_drop_remainder(batch_size))
+
+        # self.iterator = tf.data.Iterator.from_structure(self.dataset.output_types, self.dataset.output_shapes)
+        # self.next_x = tf.squeeze(self.iterator.get_next())
+        # self.training_init_op = self.iterator.make_initializer(self.dataset)
+
         self.dataset = tf.data.Dataset.from_tensor_slices(
             convert_to_tensor(self.data_ob.train_data_list, dtype=tf.string))
-        self.dataset = self.dataset.map(lambda filename : tuple(tf.py_func(self._read_by_function,
-                                                                            [filename], [tf.double])), num_parallel_calls=16)
+        self.dataset = self.dataset.map(lambda filename : tf.py_func(self._read_by_function_pair,
+                                                                            [filename], [tf.double, tf.double]))
+        # TODO(huayi): For debug set num_parallel_calls = 1
+        
         self.dataset = self.dataset.repeat(self.repeat_num)
         self.dataset = self.dataset.apply(tf.contrib.data.batch_and_drop_remainder(batch_size))
 
+        # print("self.dataset.output_shapes: ", self.dataset.output_shapes)
+        # aaa, bbb = tf.TensorShape([self.batch_size, 64, 64, 3]), tf.TensorShape([self.batch_size, 32, 32, 3])
+        # self.iterator = tf.data.Iterator.from_structure(self.dataset.output_types, (aaa, bbb))
+        self.iterator = tf.data.Iterator.from_structure(self.dataset.output_types, self.dataset.output_shapes)
         self.iterator = tf.data.Iterator.from_structure(self.dataset.output_types, self.dataset.output_shapes)
         self.next_x = tf.squeeze(self.iterator.get_next())
         self.training_init_op = self.iterator.make_initializer(self.dataset)
 
     def build_model_vaegan(self):
+
+        # TODO(Huayi): maybe incorrect! 
+        # self.images, self.images_xyz = self.images_pairs
 
         self.z_mean, self.z_sigm = self.Encode(self.images)
         self.z_x = tf.add(self.z_mean, tf.sqrt(tf.exp(self.z_sigm))*self.ep)
@@ -53,7 +79,9 @@ class vaegan(object):
 
         self.x_p = self.generate(self.zp, reuse=True)
 
-        self.l_x,  self.D_pro_logits = self.discriminate(self.images, True)
+        # self.l_x,  self.D_pro_logits = self.discriminate(self.images, True)
+        self.l_x,  self.D_pro_logits = self.discriminate(self.images_xyz, True)
+
         _, self.G_pro_logits = self.discriminate(self.x_p, True)
 
         #KL loss
@@ -139,9 +167,12 @@ class vaegan(object):
 
             while step <= self.max_iters:
 
-                next_x_images = sess.run(self.next_x)
+                # next_x_images = sess.run(self.next_x)
+                next_x_images, next_x_images_xyz = sess.run(self.next_x)
+                
+                # fd ={self.images: next_x_images}
+                fd = {self.images: next_x_images, self.images_xyz: next_x_images_xyz}
 
-                fd ={self.images: next_x_images}
                 sess.run(opti_E, feed_dict=fd)
                 # optimizaiton G
                 sess.run(opti_G, feed_dict=fd)
@@ -176,7 +207,7 @@ class vaegan(object):
                 step += 1
 
             save_path = self.saver.save(sess , self.saved_model_path)
-            print "Model saved in file: %s" % save_path
+            print("Model saved in file: %s" % save_path)
 
     def test(self):
 
@@ -237,8 +268,9 @@ class vaegan(object):
             d2 = tf.reshape(d1, [self.batch_size, 8, 8, 256])
             d2 = tf.nn.relu(batch_normal(de_conv(d2 , output_shape=[self.batch_size, 16, 16, 256], name='gen_deconv2'), scope='gen_bn2', reuse=reuse))
             d3 = tf.nn.relu(batch_normal(de_conv(d2, output_shape=[self.batch_size, 32, 32, 128], name='gen_deconv3'), scope='gen_bn3', reuse=reuse))
-            d4 = tf.nn.relu(batch_normal(de_conv(d3, output_shape=[self.batch_size, 64, 64, 32], name='gen_deconv4'), scope='gen_bn4', reuse=reuse))
-            d5 = de_conv(d4, output_shape=[self.batch_size, 64, 64, 3], name='gen_deconv5', d_h=1, d_w=1)
+            # d4 = tf.nn.relu(batch_normal(de_conv(d3, output_shape=[self.batch_size, 64, 64, 32], name='gen_deconv4'), scope='gen_bn4', reuse=reuse))
+            # d5 = de_conv(d4, output_shape=[self.batch_size, 64, 64, 3], name='gen_deconv5', d_h=1, d_w=1)
+            d5 = de_conv(d3, output_shape=[self.batch_size, 32, 32, 3], name='gen_deconv5', d_h=1, d_w=1)
 
             return tf.nn.tanh(d5)
 
@@ -289,13 +321,26 @@ class vaegan(object):
         real_images = np.array(array)
         return real_images
 
-
-
-
-
-
-
-
+    def _read_by_function_pair(self, filename):
+        # print("filename: ", filename)
+        # import pdb
+        # pdb.set_trace()
+        filename1, filename2 = filename.decode("utf-8").split()[0], filename.decode("utf-8").split()[1]
+        # print("filename1: ", filename1)
+        # print("filename2: ", filename2)
+        array = get_image(filename1, 600, is_crop=True, resize_w=self.output_size,
+                           is_grayscale=False)
+        real_images = np.array(array)[:,:,:3]
+        # print(np.mean(real_images[:,:,0]))
+        # print(np.mean(real_images[:,:,1]))
+        # print(np.mean(real_images[:,:,2]))
+        # print(np.mean(real_images[:,:,3]))
+        array_xyz = get_image_xyz(filename2)
+        real_images_xyz = np.array(array_xyz)
+        print("--------")
+        print(real_images.shape)
+        print(real_images_xyz.shape)
+        return real_images, real_images_xyz
 
 
 
